@@ -33,9 +33,9 @@ data State = State {
              }
             deriving (Show)
 
-data ErrorType = StackUnderflow | UnallocatedRegister Int | RegisterAlreadyAllocated | InvalidPC | Unspec String
+data ErrorType = StackUnderflow | UnallocatedRegister Int | RegisterAlreadyAllocated | InvalidPC | Unspec String deriving (Show)
 
-data Error = Error { errorType :: ErrorType, message :: String }
+data Error = Error { errorType :: ErrorType, message :: String } deriving (Show)
 
 initial :: Prog -> State
 initial p = State {
@@ -48,17 +48,17 @@ initial p = State {
 -- get :: MSM State
 
 --MSM Monad
-newtype MSM a = MsM (State -> (a,State))
+newtype MSM a = MsM (State -> Either Error (a,State))
 
 instance Monad MSM where
   --return x :: State -> (x,State)
-  return x = MsM (\s -> (x,s))
+  return x = MsM (\s -> Right (x,s))
   -- (>>=) :: m a -> (a -> m b) -> m b
   -- see notes for picture.
   --
   -- (>>=) :: (State -> (a,State)) -> (a -> (State -> (b,State))) -> (State -> (b,State))
   --                    h                           f                     result                  
-  (MsM h) >>= f = MsM $ \s -> let (a,s') = h s
+  (MsM h) >>= f = MsM $ \s -> let Right (a,s') = h s
                                   (MsM g) = f a
                               in g s'
 
@@ -88,10 +88,10 @@ getStack = do s <- get
               return (stack s)
 
 get :: MSM State
-get = MsM (\s -> (s,s))
+get = MsM (\s -> Right (s,s))
 
 set :: State -> MSM ()
-set m = MsM (\s -> ((),m))
+set m = MsM (\s -> Right ((),m))
 
 add :: MSM Int
 add = do x <- pop
@@ -118,7 +118,7 @@ neg = do x <- pop
 
 getInst :: MSM Inst
 getInst = MsM (\s -> 
-          (prog s !! pc s,s))
+          Right (prog s !! pc s,s))
 
 checkStackunderflow :: MSM Bool
 checkStackunderflow = do s <- get
@@ -154,9 +154,8 @@ interp = run
                  cont <- interpInst inst
                  when cont run
 
-runMSM :: Prog -> ((), State)
+runMSM :: Prog -> Either Error ((), State)
 runMSM p = let (MsM f) = interp 
            in f $ initial p
-
 
 a = [POP,PUSH 1,HALT]
