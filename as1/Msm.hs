@@ -35,7 +35,7 @@ data State = State {
 
 data ErrorType = StackUnderflow | UnallocatedRegister Int | RegisterAlreadyAllocated | InvalidPC | Unspec String deriving (Show)
 
-data Error = Error { errorType :: ErrorType, message :: String } deriving (Show)
+data Error = Error { t :: ErrorType, m :: String } deriving (Show)
 
 initial :: Prog -> State
 initial p = State {
@@ -58,14 +58,27 @@ instance Monad MSM where
   --
   -- (>>=) :: (State -> (a,State)) -> (a -> (State -> (b,State))) -> (State -> (b,State))
   --                    h                           f                     result                  
-  (MsM h) >>= f = MsM $ \s -> let Right (a,s') = h s
-                                  (MsM g) = f a
-                              in g s'
+  (MsM h) >>= f = MsM $ \s -> case h s of Left x -> Left x
+                                          Right (a,s') -> let (MsM g) = f a
+                                                              in g s'
+
+  -- (MsM h) >>= f = MsM $ \s -> if True
+  --                             then let Right (a,s') = h s
+  --                                      (MsM g) = f a
+  --                                  in g s'
+  --                             else Left Error { t = StackUnderflow, m = "crash"}
+
+helper :: Either a b -> Int
+helper (Left  x) = 0
+helper (Right x) = 1
 
 inc :: MSM Int
 inc = do s <- get
          set (s {pc = pc s + 1})
          return (pc s)
+
+crash :: MSM ()
+crash = MsM (\s -> Left Error { t = StackUnderflow, m = "crash"})
 
 push :: Int -> MSM ()
 push x = do sta <- getStack
@@ -117,8 +130,9 @@ neg = do x <- pop
          return (-x)
 
 getInst :: MSM Inst
-getInst = MsM (\s -> 
-          Right (prog s !! pc s,s))
+getInst = do s <- get
+             crash
+             return (prog s !! pc s)
 
 checkStackunderflow :: MSM Bool
 checkStackunderflow = do s <- get
@@ -158,4 +172,4 @@ runMSM :: Prog -> Either Error ((), State)
 runMSM p = let (MsM f) = interp 
            in f $ initial p
 
-a = [POP,PUSH 1,HALT]
+a = [PUSH 2,POP,PUSH 1,HALT]
