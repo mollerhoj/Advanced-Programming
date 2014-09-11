@@ -61,7 +61,6 @@ instance Monad MSM where
   (MsM h) >>= f = MsM $ \s -> case h s of Left x -> Left x
                                           Right (a,s') -> let (MsM g) = f a
                                                               in g s'
-
   -- (MsM h) >>= f = MsM $ \s -> if True
   --                             then let Right (a,s') = h s
   --                                      (MsM g) = f a
@@ -80,15 +79,20 @@ inc = do s <- get
 crash :: MSM ()
 crash = MsM (\s -> Left Error { t = StackUnderflow, m = "crash"})
 
+die :: ErrorType -> String -> MSM a
+die tx mx = MsM (\s -> Left Error { t = tx, m = mx})
+
 push :: Int -> MSM ()
 push x = do sta <- getStack
             modify (\s -> s {stack = x : sta})
 
-
 pop :: MSM Int
 pop = do sta <- getStack
-         modify (\s -> s {stack = tail sta})
-         return (head sta)
+         e <- emptyStack
+         if not e
+         then do modify (\s -> s {stack = tail sta})
+                 return (head sta)
+         else do die StackUnderflow "pop"
 
 dup :: MSM Int
 dup = do x <- pop
@@ -131,22 +135,24 @@ neg = do x <- pop
 
 getInst :: MSM Inst
 getInst = do s <- get
-             crash
-             return (prog s !! pc s)
+             if inRange (pc s) (prog s)
+             then do return (prog s !! pc s)
+             else do die InvalidPC "could not get instruction"
 
-checkStackunderflow :: MSM Bool
-checkStackunderflow = do s <- get
-                         if (stack s) /= []
-                         then do return True
-                         else do return False
+-- Is the index inside the list?
+inRange :: Int -> [a] -> Bool
+inRange i l = True --i > 0 && i < length l
+
+emptyStack :: MSM Bool
+emptyStack = do s <- get
+                if (stack s) == []
+                then do return True
+                else do return False
 
 interpInst :: Inst -> MSM Bool
-interpInst POP      = do t <- checkStackunderflow
-                         if t
-                         then do pop
-                                 inc
-                                 return True
-                         else do return t
+interpInst POP      = do pop
+                         inc
+                         return True
 
 interpInst (PUSH x) = do push x
                          inc
