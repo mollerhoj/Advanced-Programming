@@ -62,10 +62,6 @@ instance Monad MSM where
                                   (MsM g) = f a
                               in g s'
 
---TODO: Declare a lot of functions
---MSM is a ST.
---pop is a ST that pop one from the state and returns the value and the new state.
-
 inc :: MSM Int
 inc = do s <- get
          set (s {pc = pc s + 1})
