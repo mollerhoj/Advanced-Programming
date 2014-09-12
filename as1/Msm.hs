@@ -1,6 +1,16 @@
 -- Notes
 -- The program counter is implemented as an integer
-module MSM where
+module Msm
+( Stack (..)
+, Regs (..)
+, Inst (..)
+, PC (..)
+, Prog (..)
+, State (..)
+, ErrorType (..)
+, Error (..)
+, runMSM
+) where
 
 import Control.Monad
 
@@ -19,6 +29,8 @@ data Inst = PUSH Int
           | NEWREG Int
           | LOAD
           | STORE
+          | JMP
+          | CJMP Int
             deriving (Show)
 type PC = Int
 
@@ -33,9 +45,9 @@ data State = State {
              }
             deriving (Show)
 
-data ErrorType = StackUnderflow | UnallocatedRegister Int | RegisterAlreadyAllocated | InvalidPC | Unspec String deriving (Show)
+data ErrorType = StackUnderflow | UnallocatedRegister Int | RegisterAlreadyAllocated | InvalidPC | Unspec String deriving (Show,Eq)
 
-data Error = Error { t :: ErrorType, m :: String } deriving (Show)
+data Error = Error { t :: ErrorType } deriving (Show,Eq)
 
 initial :: Prog -> State
 initial p = State {
@@ -45,9 +57,8 @@ initial p = State {
               reg = []
             }
 
--- get :: MSM State
-
---MSM Monad
+-- The MSM monad takes a state and returns either A) a value and a new state or 
+-- B) an Error.
 newtype MSM a = MsM (State -> Either Error (a,State))
 
 instance Monad MSM where
@@ -58,51 +69,38 @@ instance Monad MSM where
   --
   -- (>>=) :: (State -> (a,State)) -> (a -> (State -> (b,State))) -> (State -> (b,State))
   --                    h                           f                     result                  
-  (MsM h) >>= f = MsM $ \s -> case h s of Left x -> Left x
-                                          Right (a,s') -> let (MsM g) = f a
+  -- I have a feeling that there is a nicer way to combine two monads
+  -- I would like to not have to reimplement the Either monad here.
+  (MsM h) >>= f = MsM $ \s -> case h s of 
+                                Left x -> Left x
+                                Right (a,s') -> let (MsM g) = f a
                                                               in g s'
-  -- (MsM h) >>= f = MsM $ \s -> if True
-  --                             then let Right (a,s') = h s
-  --                                      (MsM g) = f a
-  --                                  in g s'
-  --                             else Left Error { t = StackUnderflow, m = "crash"}
-
-helper :: Either a b -> Int
-helper (Left  x) = 0
-helper (Right x) = 1
 
 inc :: MSM Int
 inc = do s <- get
          set (s {pc = pc s + 1})
          return (pc s)
 
-crash :: MSM ()
-crash = MsM (\s -> Left Error { t = StackUnderflow, m = "crash"})
-
-die :: ErrorType -> String -> MSM a
-die tx mx = MsM (\s -> Left Error { t = tx, m = mx})
+die :: ErrorType -> MSM a
+die tx = MsM (\s -> Left Error {t = tx})
 
 push :: Int -> MSM ()
-push x = do sta <- getStack
-            modify (\s -> s {stack = x : sta})
+push x = do s <- get
+            set (s {stack = x : (stack s)})
 
 pop :: MSM Int
-pop = do sta <- getStack
+pop = do s <- get
          e <- emptyStack
          if not e
-         then do modify (\s -> s {stack = tail sta})
-                 return (head sta)
-         else do die StackUnderflow "pop"
+         then do set (s {stack = tail (stack s)})
+                 return (head (stack s))
+         else do die StackUnderflow
 
 dup :: MSM Int
 dup = do x <- pop
          push x
          push x
          return x
-
-getStack :: MSM Stack
-getStack = do s <- get
-              return (stack s)
 
 get :: MSM State
 get = MsM (\s -> Right (s,s))
@@ -123,6 +121,7 @@ swap = do x <- pop
           push x
           push y
 
+-- required by exercise? But I like get/set more...
 modify :: (State -> State) -> MSM ()
 modify f = do s <- get
               set (f s)
@@ -137,11 +136,11 @@ getInst :: MSM Inst
 getInst = do s <- get
              if inRange (pc s) (prog s)
              then do return (prog s !! pc s)
-             else do die InvalidPC "could not get instruction"
+             else do die InvalidPC
 
 -- Is the index inside the list?
 inRange :: Int -> [a] -> Bool
-inRange i l = True --i > 0 && i < length l
+inRange i l = i >= 0 && i < length l
 
 emptyStack :: MSM Bool
 emptyStack = do s <- get
@@ -164,9 +163,30 @@ interpInst NEG      = do neg
                          inc
                          return True
 interpInst HALT     = do return False
+
 interpInst ADD      = do add
                          inc
                          return True
+
+interpInst JMP      = do x <- pop
+                         s <- get
+                         set (s {pc = x})
+                         return True
+
+interpInst (CJMP i) = do x <- pop
+                         s <- get
+                         if x < 0
+                         then do set (s {pc = i})
+                                 return True
+                         else do inc
+                                 return True
+
+interpInst SWAP      = do x <- pop
+                          y <- pop
+                          push x
+                          push y
+                          inc
+                          return True
 
 interp :: MSM ()
 interp = run
@@ -174,8 +194,16 @@ interp = run
                  cont <- interpInst inst
                  when cont run
 
-runMSM :: Prog -> Either Error ((), State)
-runMSM p = let (MsM f) = interp 
+-- HALT error is handled in an ugly way here..
+runMSM :: Prog -> Either Error Int
+runMSM p = case runMSMHelper p of
+                            Left x       -> Left x
+                            Right ((),s) -> case stack s of
+                                             []      -> Left (Error {t = StackUnderflow})
+                                             (x:xs)  -> Right x
+
+runMSMHelper :: Prog -> Either Error ((), State)
+runMSMHelper p = let (MsM f) = interp 
            in f $ initial p
 
-a = [PUSH 2,POP,PUSH 1,HALT]
+a = [PUSH 2,POP,PUSH 7,HALT]
