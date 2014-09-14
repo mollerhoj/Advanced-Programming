@@ -2,7 +2,7 @@ module Curves
 ( point
 , curve
 , Axis (..)
-, Curve
+, Curve (..)
 , Point (..)
 , connect
 , rotate
@@ -13,9 +13,10 @@ module Curves
 , width
 , height
 , toSVG
-) where
+) 
+where
 
-import Text.Printf
+import Text.Printf (printf)
 
 data Point = Point (Double,Double) deriving (Show)
 
@@ -33,33 +34,43 @@ strangeRound x = fromIntegral (floor (x * 100) :: Integer) / 100
 rev :: Point -> Point
 rev (Point (x, y)) = Point (-x, -y)
 
-type Curve = [Point]
+data Curve = Curve Point [Point] deriving (Eq)
+
 curve :: Point -> [Point] -> Curve
-curve p l = p : l
+curve = Curve
 
 toList :: Curve -> [Point]
-toList c = c
+toList (Curve x xs) = x : xs
 
-seqments :: Curve -> [(Point,Point)]
-seqments (p1:p2:xs) = (p1,p2) : seqments (p2 : xs)
-seqments _          = []
+segments :: Curve -> [(Point,Point)]
+segments (Curve p1 (p2:xs)) = (p1,p2) : segments (Curve p2 xs)
+segments (Curve _ [])      = []
 
 connect :: Curve -> Curve -> Curve
-connect c1 c2 = c1 ++ c2
+connect (Curve c1 cs1) c2 = Curve c1 (cs1 ++ toList c2)
 
 translate :: Curve -> Point -> Curve
-translate [] _     = []
-translate (x:xs) p = translate' (x:xs) (move p (rev x))
+translate (Curve x xs) p = translate' (Curve x xs) (move p (rev x))
 
 translate' :: Curve -> Point -> Curve
-translate' [] _              = []
-translate' (x:xs) p = move x p : translate' xs p
+translate' (Curve x1 []) p      = Curve (move x1 p) []
+translate' (Curve x1 (x2:xs)) p = Curve (move x1 p) (toList (translate' (Curve x2 xs) p))
+
+rotate :: Curve -> Double -> Curve
+rotate c d = rotateRad c (d / 180 * pi)
+
+rotateRad :: Curve -> Double -> Curve
+rotateRad (Curve x1 []) a      = Curve (rotateRadPoint x1 a) []
+rotateRad (Curve x1 (x2:xs)) a = Curve (rotateRadPoint x1 a) (toList $ rotateRad (Curve x2 xs) a)
+
+rotateRadPoint :: Point -> Double -> Point
+rotateRadPoint (Point (x, y)) a = Point (x * cos(-a) - y * sin(-a), x * sin(-a) + y * cos(-a))
 
 data Axis = Vertical | Horizontal
 
 reflect :: Curve -> Axis -> Double -> Curve
-reflect [] _ _ = []
-reflect (x:xs) a r = reflectPoint x a r : reflect xs a r
+reflect (Curve x1 []) a r = Curve (reflectPoint x1 a r) []
+reflect (Curve x1 (x2:xs)) a r = Curve (reflectPoint x1 a r) (toList $ reflect (Curve x2 xs) a r)
 
 reflectPoint :: Point -> Axis -> Double -> Point
 reflectPoint (Point (x, y)) Vertical r = Point (reflectDouble x r, y)
@@ -67,22 +78,18 @@ reflectPoint (Point (x, y)) Horizontal   r = Point (x, reflectDouble y r)
 
 reflectDouble :: Double -> Double -> Double
 reflectDouble i r = 2 * r - i
-
+ 
 move :: Point -> Point -> Point
 move (Point (x, y)) (Point (dx, dy)) = Point (x+dx, y+dy)
 
 bbox :: Curve -> (Point,Point)
-bbox (p1:p2:xs) = bbox' (p1:p2:xs) (p1,p2)
-bbox _          = (Point (0, 0),Point (0, 0))
+bbox (Curve x xs) = (foldl minPoint x xs,foldl maxPoint x xs)
 
-bbox' :: Curve -> (Point,Point) -> (Point,Point)
-bbox' [] (p1,p2) = (p1,p2)
-bbox' (Point (x1, y1):xs) (Point (x0, y0),Point (x2, y2))
-    | x1 < x0   = bbox' (Point (x1, y1):xs) (Point (x1, y0),Point (x2, y2))
-    | x1 > x2   = bbox' (Point (x1, y1):xs) (Point (x0, y0),Point (x1, y2))
-    | y1 < y0   = bbox' (Point (x1, y1):xs) (Point (x0, y1),Point (x2, y2))
-    | y1 > y2   = bbox' (Point (x1, y1):xs) (Point (x0, y0),Point (x2, y1))
-    | otherwise = bbox' xs (Point (x0, y0),Point (x2, y2))
+minPoint :: Point -> Point -> Point
+minPoint (Point (x1,y1)) (Point (x2,y2)) = Point(min x1 x2,min y1 y2)
+
+maxPoint :: Point -> Point -> Point
+maxPoint (Point (x1,y1)) (Point (x2,y2)) = Point(max x1 x2,max y1 y2)
 
 width :: Curve -> Double
 width c = width' (bbox c)
@@ -96,16 +103,6 @@ height c = height' (bbox c)
 height' :: (Point,Point) -> Double
 height' (Point (_, y1),Point (_, y2)) = abs (y1 - y2)
 
-rotate :: Curve -> Double -> Curve
-rotate c d = rotateRad c (d / 180 * pi)
-
-rotateRad :: Curve -> Double -> Curve
-rotateRad [] _     = []
-rotateRad (x:xs) a = rotateRadPoint x a : rotateRad xs a
-
-rotateRadPoint :: Point -> Double -> Point
-rotateRadPoint (Point (x, y)) a = Point (x * cos(-a) - y * sin(-a), x * sin(-a) + y * cos(-a))
-
 -- Rendering
 toSVG :: Curve -> String
 toSVG c = svgHead (width c) (height c) ++ svgBody c ++ svgTail
@@ -117,7 +114,7 @@ svgHead w h =
                     "<g>"]
 
 svgBody :: Curve -> String
-svgBody c = svgBody' (seqments c)
+svgBody c = svgBody' (segments c)
 
 svgBody' :: [(Point,Point)] -> String
 svgBody' (ps:xs) = svgLine ps ++ svgBody' xs

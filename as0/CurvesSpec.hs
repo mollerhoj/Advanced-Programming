@@ -1,16 +1,16 @@
 import Curves
 
 test1  = point(0,0.01) == Point (0.009,0.01)
-test2  = curve (point(1,1)) [point(2,2)] == [point(1,1),point(2,2)]
-test3  = connect [point(1,1)] [point(2,2)] == [point(1,1),point(2,2)]
-test4  = rotate [point(1,2)] 180 == [point(-1,-2)]
-test5  = translate ([point(1,2),point(2,1)]) (point(4,4)) == [point(4,4),point(5,3)]
-test6  = reflect [point(1,2)] Vertical 3 == [(point(5,2))]
-test61 = reflect [point(1,2)] Horizontal 3 == [(point(1,4))]
-test7  = bbox [point(1,2),point(3,4),point(2,0)] == (point(1,0),point(3,4))
-test8  = toList [point(1,2)] == [point(1,2)]
-test9  = width  [point(1,2),point(3,4),point(2,0)] == 2
-test10 = height [point(1,2),point(3,4),point(2,0)] == 4
+test2  = curve (point(1,1)) [point(2,2)] == Curve (point(1,1)) [point(2,2)]
+test3  = connect (Curve (point(1,1)) []) (Curve (point(2,2)) []) == Curve (Point(1,1)) [point(2,2)] 
+test4  = rotate (Curve (point(1,2)) []) 180 == Curve (point(-1,-2)) []
+test5  = translate (Curve (point(1,2)) [point(2,1)]) (point(4,4)) == Curve (point(4,4)) [point(5,3)]
+test6  = reflect (Curve (point(1,2)) []) Vertical 3 == Curve (point(5,2)) []
+test61 = reflect (Curve (point(1,2)) []) Horizontal 3 == Curve (point(1,4)) []
+test7  = bbox (Curve (point(1,2)) [point(3,4),point(2,0)]) == (point(1,0),point(3,4))
+test8  = toList (Curve (point(1,2)) []) == [point(1,2)]
+test9  = width  (Curve (point(1,2)) [point(3,4),point(2,0)]) == 2
+test10 = height (Curve (point(1,2)) [point(3,4),point(2,0)]) == 4
 test11 = hilbert $ hilbert $ hilbert $ hilbert $ curve (point (0,0)) []
 
 hilbert :: Curve -> Curve
