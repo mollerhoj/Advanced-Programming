@@ -4,40 +4,61 @@ module CurvySyntax
 , Error (..)
 ) where
 
+-- Questions:
+-- Is QuickCheck required for the exam?
+--
+-- I like 'main' tests better than Hunit...
+--
+-- Errors? I only know how to throw "SyntaxError"
+--
+-- how can I avoid to use the chainl1 methods?
+-- 
+-- Am I allowed to extend / change the SimpleParser?
+--
+-- TODO:
+-- write about errors in report.
+
 import CurveAST
 import SimpleParse
-import Control.Applicative (some,(<|>))
+import Control.Applicative ((<|>),(<$>))
 import Data.Char (isLetter,isDigit)
 
 parseFile :: FilePath -> IO (Either Error Program)
-parseFile filename = fmap parseString $ readFile filename
+parseFile filename = parseString <$> readFile filename
 
-data Error = ParseError | StrangeError deriving (Show)
+data Error = SyntaxError String | AmbiguousError deriving (Show,Eq)
 
 parseString :: String -> Either Error Program
 parseString s = case parse program s of
-                  (x1,[]):_ -> Right x1
-                  (x1,x2):_ -> Left StrangeError
-                  []        -> Left ParseError
+                  [(x1,"")]  -> Right x1
+                  [(_,rest)]   -> Left $ SyntaxError rest
+                  _:_     -> Left AmbiguousError
+                  []      -> Left $ SyntaxError "Must start with a definition"
 
 digits :: Parser String
 digits = munch1 isDigit
 
-number = token number'
+number  :: Parser Number
+number = token (do pre <- digits
+                   char '.'
+                   post <- digits
+                   return $ read $ pre ++ "." ++ post
+                   <++ do i <- digits
+                          return $ read i)
 
-number' :: Parser Number
-number' = do pre <- digits
-             char '.'
-             post <- digits
-             return $ (read (pre ++ "." ++ post) :: Double)
-             <++ do i <- digits
-                    return $ read i
+program :: Parser [Def]
+program = do x <- defs
+             spaces
+             notFollowedBy space
+             return x
 
-program = defs
-defs = some def
+defs :: Parser [Def]
+defs = do x <- many1 def
+          notFollowedBy def
+          return x
 
 def :: Parser Def
-def = do defWhere <++ defNormal 
+def = defWhere <++ defNormal 
 
 defNormal :: Parser Def
 defNormal = do i <- ident
@@ -65,36 +86,43 @@ curve = connect <++
         rot <++
         curveR
 
+connect :: Parser Curve
 connect = do c1 <- curveR
              symbol "++"
              c2 <- curve
              return (Connect c1 c2)
 
+over :: Parser Curve
 over = do c1 <- curveR
           schar '^'
           c2 <- curve
           return (Over c1 c2)
 
+translate :: Parser Curve
 translate = do c1 <- curveR
                symbol "->"
                p <- point
                return (Translate c1 p)
 
+scale :: Parser Curve
 scale = do c1 <- curveR
            symbol "**"
            e <- expr
            return (Scale c1 e)
 
+refv :: Parser Curve
 refv = do c1 <- curveR
           symbol "refv"
           e <- expr
           return (Refv c1 e)
 
+refh :: Parser Curve
 refh = do c1 <- curveR
           symbol "refh"
           e <- expr
           return (Refh c1 e)
 
+rot :: Parser Curve
 rot =  do c1 <- curveR
           symbol "rot"
           e <- expr
@@ -125,7 +153,6 @@ point =  do schar '('
             schar ')'
             return $ Point e1 e2
 
--- N | (E)
 factor :: Parser Expr
 factor = do x <- number 
             return $ Con x
@@ -134,14 +161,11 @@ factor = do x <- number
                 schar ')'
                 return n
 
--- factor * factor, factor / factor
--- term :: Parser
--- chainl1 methods are no good. figure out if they can be removed.
 term :: Parser Expr
 term = factor `chainl1` mulOp
 
 expr :: Parser Expr
-expr = do term `chainl1` addOp
+expr = term `chainl1` addOp
        <|> do symbol "width"
               c <- curve
               return $ Width c
@@ -149,23 +173,22 @@ expr = do term `chainl1` addOp
                   c <- curve
                   return $ Height c
 
+addOp :: Parser (Expr -> Expr -> Expr)
 addOp = do schar '+'
-           return (Add)
+           return Add
 
+mulOp :: Parser (Expr -> Expr -> Expr)
 mulOp = do schar '*'
-           return (Mult)
+           return Mult
 
 isUnderscore :: Char -> Bool
 isUnderscore c = '_'==c
 
 isLegal :: Char -> Bool
-isLegal c = (isLetter c || isDigit c || isUnderscore c)
+isLegal c = isLetter c || isDigit c || isUnderscore c
 
 keywords :: [String]
 keywords = ["where", "refv", "refh", "rot", "width", "height"]
-
--- letters or digits or underscores
--- not reserved words ??
 
 ident :: Parser Ident
 ident = do n <- token (munch1 isLegal)
