@@ -21,4 +21,3 @@ data Expr = Mult Expr Expr
           deriving (Eq, Show)
 type Ident = String
 type Number = Double
-

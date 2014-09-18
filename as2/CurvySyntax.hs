@@ -6,18 +6,18 @@ module CurvySyntax
 
 import CurveAST
 import SimpleParse
-import Control.Applicative
-
-import Data.Char
+import Control.Applicative (some,(<|>))
+import Data.Char (isLetter,isDigit)
 
 parseFile :: FilePath -> IO (Either Error Program)
 parseFile filename = fmap parseString $ readFile filename
 
-data Error = ParseError deriving (Show)
+data Error = ParseError | StrangeError deriving (Show)
 
 parseString :: String -> Either Error Program
 parseString s = case parse program s of
-                  (x1,x2):_ -> Right x1
+                  (x1,[]):_ -> Right x1
+                  (x1,x2):_ -> Left StrangeError
                   []        -> Left ParseError
 
 digits :: Parser String
@@ -33,17 +33,11 @@ number' = do pre <- digits
              <++ do i <- digits
                     return $ read i
 
-addOp = do schar '+'
-           return (Add)
+program = defs
+defs = some def
 
-mulOp = do schar '*'
-           return (Mult)
-
-program = some def
-
--- argh, left recursive!
 def :: Parser Def
-def = do defNormal
+def = do defWhere <++ defNormal 
 
 defNormal :: Parser Def
 defNormal = do i <- ident
@@ -51,8 +45,63 @@ defNormal = do i <- ident
                c <- curve
                return $ Def i c []
 
+defWhere :: Parser Def
+defWhere = do i <- ident
+              schar '='
+              c <- curve
+              symbol "where"
+              schar '{'
+              d <- defs
+              schar '}'
+              return $ Def i c d
+
 curve :: Parser Curve
-curve = single <|> id' <|> parenthesed
+curve = connect <++
+        over <++
+        translate <++
+        scale <++
+        refv <++
+        refh <++
+        rot <++
+        curveR
+
+connect = do c1 <- curveR
+             symbol "++"
+             c2 <- curve
+             return (Connect c1 c2)
+
+over = do c1 <- curveR
+          schar '^'
+          c2 <- curve
+          return (Over c1 c2)
+
+translate = do c1 <- curveR
+               symbol "->"
+               p <- point
+               return (Translate c1 p)
+
+scale = do c1 <- curveR
+           symbol "**"
+           e <- expr
+           return (Scale c1 e)
+
+refv = do c1 <- curveR
+          symbol "refv"
+          e <- expr
+          return (Refv c1 e)
+
+refh = do c1 <- curveR
+          symbol "refh"
+          e <- expr
+          return (Refh c1 e)
+
+rot =  do c1 <- curveR
+          symbol "rot"
+          e <- expr
+          return (Rot c1 e)
+
+curveR :: Parser Curve
+curveR = single <|> id' <|> parenthesed
 
 parenthesed :: Parser Curve
 parenthesed = do schar '('
@@ -67,14 +116,6 @@ single = do x <- point
 id' :: Parser Curve
 id' = do x <- ident
          return $ Id x 
-
--- argh! left recursive!!
-connect :: Parser Curve
-connect = do c1 <- curve
-             symbol "++"
-             c2 <- curve
-             return $ Connect c1 c2
-
 
 point :: Parser Point
 point =  do schar '('
@@ -104,6 +145,15 @@ expr = do term `chainl1` addOp
        <|> do symbol "width"
               c <- curve
               return $ Width c
+           <|> do symbol "height"
+                  c <- curve
+                  return $ Height c
+
+addOp = do schar '+'
+           return (Add)
+
+mulOp = do schar '*'
+           return (Mult)
 
 isUnderscore :: Char -> Bool
 isUnderscore c = '_'==c
