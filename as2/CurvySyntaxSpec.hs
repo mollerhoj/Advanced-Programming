@@ -2,7 +2,7 @@ import Test.HUnit
 import CurvySyntax
 import CurveAST
 
-test1 = TestCase $ assertBool "Defines x to a moved point" $
+test1 = TestCase $ assertBool "Defines x to be a moved point" $
   parseString "x= (0,0) -> (1,2)" == Right [Def "x" (Translate (Single (Point (Con 0.0) (Con 0.0))) (Point (Con 1.0) (Con 2.0))) []]
 
 test2 = TestCase $ assertBool "Defines x to be a point" $

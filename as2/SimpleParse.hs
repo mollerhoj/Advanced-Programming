@@ -133,6 +133,15 @@ option p = do v <- p
            <|> return Nothing
 
 
+-- A sanse for of munch1, much needed. 
+-- Takes a parser A, and returns a parser that takes as many
+-- as possible of parser A
+more :: Parser a -> Parser [a]
+more p = do x <- many p
+            notFollowedBy p
+            return x
+
+
 -- Lexical combinators: ----------------------------------------------
 
 space           :: Parser Char

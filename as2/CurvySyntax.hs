@@ -4,20 +4,6 @@ module CurvySyntax
 , Error (..)
 ) where
 
--- Questions:
--- Is QuickCheck required for the exam?
---
--- I like 'main' tests better than Hunit...
---
--- Errors? I only know how to throw "SyntaxError"
---
--- how can I avoid to use the chainl1 methods?
--- 
--- Am I allowed to extend / change the SimpleParser?
---
--- TODO:
--- write about errors in report.
-
 import CurveAST
 import SimpleParse
 import Control.Applicative ((<|>),(<$>))
@@ -26,14 +12,13 @@ import Data.Char (isLetter,isDigit)
 parseFile :: FilePath -> IO (Either Error Program)
 parseFile filename = parseString <$> readFile filename
 
-data Error = SyntaxError String | AmbiguousError deriving (Show,Eq)
+data Error = SyntaxError String deriving (Show,Eq)
 
 parseString :: String -> Either Error Program
 parseString s = case parse program s of
-                  [(x1,"")]  -> Right x1
-                  [(_,rest)]   -> Left $ SyntaxError rest
-                  _:_     -> Left AmbiguousError
-                  []      -> Left $ SyntaxError "Must start with a definition"
+                  (x1,""):_    -> Right x1
+                  (_,rest):_   -> Left $ SyntaxError rest
+                  []           -> Left $ SyntaxError "Must start with a definition"
 
 digits :: Parser String
 digits = munch1 isDigit
@@ -43,13 +28,18 @@ number = token (do pre <- digits
                    char '.'
                    post <- digits
                    return $ read $ pre ++ "." ++ post
-                   <++ do i <- digits
+                   <|> do i <- digits
                           return $ read i)
+
+-- Not used, because I want to return any errors.
+finally :: Parser [Def]
+finally = do x <- program
+             eof
+             return x
 
 program :: Parser [Def]
 program = do x <- defs
-             spaces
-             notFollowedBy space
+             more space
              return x
 
 defs :: Parser [Def]
@@ -58,7 +48,7 @@ defs = do x <- many1 def
           return x
 
 def :: Parser Def
-def = defWhere <++ defNormal 
+def = defWhere <|> defNormal 
 
 defNormal :: Parser Def
 defNormal = do i <- ident
@@ -78,12 +68,12 @@ defWhere = do i <- ident
 
 curve :: Parser Curve
 curve = connect <++
-        over <++
-        translate <++
-        scale <++
-        refv <++
-        refh <++
-        rot <++
+        over <|>
+        translate <|>
+        scale <|>
+        refv <|>
+        refh <|>
+        rot <|>
         curveR
 
 connect :: Parser Curve
@@ -169,9 +159,9 @@ expr = term `chainl1` addOp
        <|> do symbol "width"
               c <- curve
               return $ Width c
-           <|> do symbol "height"
-                  c <- curve
-                  return $ Height c
+       <|> do symbol "height"
+              c <- curve
+              return $ Height c
 
 addOp :: Parser (Expr -> Expr -> Expr)
 addOp = do schar '+'
@@ -184,13 +174,13 @@ mulOp = do schar '*'
 isUnderscore :: Char -> Bool
 isUnderscore c = '_'==c
 
-isLegal :: Char -> Bool
-isLegal c = isLetter c || isDigit c || isUnderscore c
+constituent :: Char -> Bool
+constituent c = isLetter c || isDigit c || isUnderscore c
 
 keywords :: [String]
 keywords = ["where", "refv", "refh", "rot", "width", "height"]
 
 ident :: Parser Ident
-ident = do n <- token (munch1 isLegal)
+ident = do n <- token (munch1 constituent)
            if n `elem` keywords then reject
            else return n

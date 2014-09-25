@@ -11,15 +11,18 @@ Inspecting the code with `hlint` returns no 1 warning, that I don't believe shou
 
 Notes
 -----
-- I use a mix of `<++` and `<|>`+`notFollowedBy` to avoid ambiguous grammars. I chose to do so, because haven't tried either, and wanted to make a decision after trying both. I think I favor `<++`.
+- I have defined a `finally` function that makes sure the parser have reached the end of the input. But in order to return a somewhat descriptive error, I don't use it.
 
-- My error ...
+- I defined a `more` function, that works like munch, but without the predicate.
 
-- I use the chaining of terms...
+- The `token` is used in the outer most parser (eg. it is used as little as possible.)
+
+- Parsers return all possible results, only the result that reaches the eof is used.
 
 Testing
 -------
 I tried HUnit for testing. I do not like the framework very much.
+
 Room for improvement
 --------------------
 I would also have liked to test extensively (eg. with QuickTest), but I could not find the time.
