@@ -5,30 +5,32 @@
 % Refactor with rpc 
 
 start(Name) ->
-  Pid = spawn(facein,person,[{Name,[],[]}]),
+  Pid = spawn(facein,person,[{Name,[],[],[]}]),
   {ok,Pid}.
 
-person({Name,FriendList,Inbox}) ->
+person({Name,FriendList,Inbox,Sent}) ->
   receive
     {From,{name}} ->
       From ! {self(),{ok,Name}},
-      person({Name,FriendList,Inbox});
+      person({Name,FriendList,Inbox,Sent});
     {From,{received_messages}} ->
       From ! {self(),{ok,Inbox}},
-      person({Name,FriendList,Inbox});
-    {_   ,{receive_message,OriginName,Msg,Radius}} ->
-      io:format("radius: ~s!~n",[Name]),
-      send_list(OriginName,FriendList,Msg,Radius-1),
-      person({Name,FriendList,[{OriginName,Msg}|Inbox]});
+      person({Name,FriendList,Inbox,Sent});
+    {_   ,{receive_message,Ref,OriginName,Msg,Radius}} ->
+      self() ! {self(),{broadcast,Ref,OriginName,Msg,Radius-1}},
+      person({Name,FriendList,[{OriginName,Msg}|Inbox],Sent});
+    {_   ,{broadcast,Ref,OriginName,Msg,Radius}} ->
+      send_list(Ref,OriginName,FriendList,Msg,Radius,lists:member({Ref,Radius},Sent)),
+      person({Name,FriendList,Inbox,[{Ref,Radius}|Sent]});
     {From,{shutdown}} ->
       From ! {self(),{ok}};
     {From,{friends}} ->
       From ! {self(),{ok,FriendList}},
-      person({Name,FriendList,Inbox});
+      person({Name,FriendList,Inbox,Sent});
     {From,{add_friend,Fid}} ->
       FriendName = name(Fid),
       From ! {self(),{ok}},
-      person({Name,[{FriendName,Fid} | FriendList],Inbox});
+      person({Name,[{FriendName,Fid} | FriendList],Inbox,Sent});
     _ ->
       io:format("Error")
   end.
@@ -40,17 +42,19 @@ add_friend(Pid,Fid) ->
   end.
 
 %send to list of friends
-send_list(_,[],_,_) ->
+send_list(_,_,_,_,_,true) -> % Don't send the same message twice
   ok;
-send_list(_,_,_,0) ->
+send_list(_,_,[],_,_,_) -> % If there are no more receivers, stop sending
   ok;
-send_list(OriginName,[{_,Fid}|Rest],Msg,Radius) ->
-  send(OriginName,Fid,Msg,Radius),
-  send_list(OriginName,Rest,Msg,Radius).
+send_list(_,_,_,_,0,_) -> % If the radius is zero, don't send anything
+  ok;
+send_list(Ref,OriginName,[{_,Fid}|Rest],Msg,Radius,false) ->
+  send(Ref,OriginName,Fid,Msg,Radius),
+  send_list(Ref,OriginName,Rest,Msg,Radius,false).
 
 % send from Pid to Fid
-send(OriginName,Fid,Msg,Radius) ->
-  Fid ! {self(),{receive_message,OriginName,Msg,Radius}}.
+send(Ref,OriginName,Fid,Msg,Radius) ->
+  Fid ! {self(),{receive_message,Ref,OriginName,Msg,Radius}}.
 
 received_messages(Pid) ->
   Pid ! {self(),{received_messages}},
@@ -59,9 +63,9 @@ received_messages(Pid) ->
   end.
 
 broadcast(Pid,Msg,Radius) ->
-  FriendList = friends(Pid),
-  Name = name(Pid),
-  send_list(Name,FriendList,Msg,Radius).
+  OriginName = name(Pid),
+  Ref = make_ref(),
+  Pid ! {self(),{broadcast,Ref,OriginName,Msg,Radius}}.
 
 name(Pid) ->
   Pid ! {self(), {name}},
