@@ -1,3 +1,6 @@
+*.beam
+*.zip
+*.txt
 learn/*
 *.hi
 *.o
